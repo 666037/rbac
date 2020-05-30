@@ -1,0 +1,694 @@
+
+<!DOCTYPE html>
+<html lang="zh-cn" class="fullscreen-bg" xmlns:th="http://www.thymeleaf.org" xmlns:shiro="http://www.pollix.at/thymeleaf/shiro">
+<head th:replace="common/links :: common_header(~{::title},~{::style},~{})">
+<title>角色管理</title>
+    <style>
+        .hide {
+            display: none;
+        }
+    </style>
+
+</head>
+<body>
+<!-- 正文开始 -->
+<div class="layui-fluid">
+    <div class="layui-card">
+        <div class="layui-card-body">
+            <!--表格工具栏-->
+            <form class="layui-form toolbar">
+                <div class="layui-form-item">
+                    <div class="layui-inline">
+                        <label class="layui-form-label">所属公司:</label>
+                        <div class="layui-input-inline">
+                            <div id="cmpTree" name="cmpId" class="ew-xmselect-tree"></div>
+                        </div>
+                    </div>
+
+                    <div class="layui-inline">
+                        <label class="layui-form-label">所属部门:</label>
+                        <div class="layui-input-inline">
+                            <div id="orgTree" name="organiseId" class="ew-xmselect-tree"></div>
+                        </div>
+                    </div>
+
+                </div>
+                <div class="layui-form-item">
+
+                    <div class="layui-inline">
+                        <label class="layui-form-label">角色名称:</label>
+                        <div class="layui-input-inline">
+                            <input name="roleName" class="layui-input" placeholder="输入角色名称"/>
+                        </div>
+                    </div>
+                    <div class="layui-inline">
+                        <label class="layui-form-label">角色编码:</label>
+                        <div class="layui-input-inline">
+                            <input name="roleId" class="layui-input" placeholder="输入角色标识"/>
+                        </div>
+                    </div>
+                    <div class="layui-inline">&emsp;
+                        <button class="layui-btn icon-btn" lay-filter="searchBtn" lay-submit>
+                            <i class="layui-icon">&#xe615;</i>搜索
+                        </button>&nbsp;
+                        <button shiro:hasPermission="right:save" id="addBtn" class="layui-btn icon-btn" type="button">
+                            <i class="layui-icon">&#xe654;</i>添加
+                        </button>
+                        <button id="expandAllBtn" class="layui-btn icon-btn" type="button">
+                            <i class="layui-icon">&#xe622;</i>展开所有
+                        </button>
+                        <button id="foldAllBtn" class="layui-btn icon-btn" type="button">
+                            <i class="layui-icon">&#xe758;</i>关闭所有
+                        </button>
+                    </div>
+                    </div>
+            </form>
+            <!-- 数据表格 -->
+            <table id="dataTable" lay-filter="dataTable"></table>
+        </div>
+    </div>
+</div>
+
+<!-- 表格操作列 -->
+<script type="text/html" id="tableBarAuth">
+    <a shiro:hasPermission="right:update" class="layui-btn layui-btn-primary layui-btn-xs" lay-event="edit">修改</a>
+    <a shiro:hasPermission="right:delete" class="layui-btn layui-btn-danger layui-btn-xs" lay-event="del">删除</a>
+
+</script>
+<!-- 表单弹窗 -->
+<script type="text/html" id="modelAuth">
+    <form id="dataForm" lay-filter="dataForm" class="layui-form model-form">
+        <input name="roleId" type="hidden"/>
+        <div class="layui-form-item">
+            <label class="layui-form-label layui-form-required">所属公司</label>
+            <div class="layui-input-block">
+                <div id="cmp2Tree" layVerify="required" class="ew-xmselect-tree"></div>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label layui-form-required">所属部门</label>
+            <div class="layui-input-block">
+                <div id="organise2Tree" layVerify="required" class="ew-xmselect-tree"></div>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label layui-form-required">选择权限</label>
+            <div class="layui-input-block">
+                <div id="rightTree" layVerify="required" class="xm-select-demo"></div>
+
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label layui-form-required">角色名称</label>
+            <div class="layui-input-block">
+                <input name="roleName" placeholder="请输入角色名称" type="text" class="layui-input" maxlength="50"
+                       lay-verType="tips" lay-verify="required" required/>
+            </div>
+        </div>
+         
+
+
+        <div id="demo1" class="xm-select-demo"></div>
+        <div class="layui-form-item text-right">
+            <button class="layui-btn layui-btn-primary" type="button" ew-event="closePageDialog">取消</button>
+            <button class="layui-btn" lay-filter="saveBtn" lay-submit>保存</button>
+        </div>
+    </form>
+</script>
+<!-- js部分 -->
+<div th:replace="common/scripts :: common"></div>
+<div th:replace="common/scripts :: jquery"></div>
+<script th:inline="javascript">
+    layui.use(['layer', 'form', 'admin', 'treeTable',  'xmSelect','iconPicker','table'], function () {
+      //   var $ = layui.jquery;
+        var layer = layui.layer;
+        var form = layui.form;
+        var admin = layui.admin;
+        var treeTable = layui.treeTable;
+        var xmSelect = layui.xmSelect;
+        var iconPicker = layui.iconPicker;
+        var table=layui.table;
+        var tbDataList = [];
+        var organiseTreeData=[];
+        var cmpTreeSelect;
+        var cmpTreeData=[];
+        var organise2TreeData=[];
+        var rightTreeData=[];
+        var rightTree;
+
+
+
+        // 渲染表格
+        var insTb = table.render({
+            elem: '#dataTable',
+            cellMinWidth: 100,
+            height: "full-98",
+            url:'/rbac/role/getRoleList',
+
+            cols: [
+              [
+                {field: 'roleId', title: '角色编码', width: 200},
+                {field: 'roleName', title: '角色名称', width: 200},
+                {field: 'organiseName', title: '部门名称', width: 200},
+                {field: 'cmpName', title: '公司名称', width: 500},
+                  {title: '操作', toolbar:'#tableBarAuth', align: 'center', minWidth: 200,fixed:'right'}
+
+                ]
+            ],
+            loading:false,
+            page:true,
+            parseData: function(res){ //res 即为原始返回的数据
+            return {
+                "code": res.code, //解析接口状态
+                "msg": res.msg, //解析提示文本
+                "count": res.count, //解析数据长度
+                "data": res.result //解析数据列表
+            };
+        },
+            // reqData: function (data, callback) {
+            //     $.get('/rbac/role/getRoleList', function (res) {
+            //         tbDataList = res.result ? res.result : [];
+            //         callback(res.result);
+            //         insTb.foldAll();
+            //     });
+            // }
+        });
+        getCmpTreeData();//渲染公司树
+        /* 表格搜索 */
+        form.on('submit(searchBtn)', function (data) {
+            insTb.reload({where: data.field, page: {curr: 1}});
+            return false;
+        });
+
+        // 添加按钮点击事件
+        $('#addBtn').click(function () {
+            showEditModel();
+        });
+        // 展开所有
+        $('#expandAllBtn').click(function () {
+            insTb.expandAll();
+        });
+        // 关闭所有
+        $('#foldAllBtn').click(function () {
+            insTb.foldAll();
+        });
+
+        // 工具条点击事件
+        table.on('tool(dataTable)', function (obj) {
+            var data = obj.data;
+            var layEvent = obj.event;
+            if (layEvent === 'edit') { // 修改
+                showEditModel(data);
+            } else if (layEvent === 'del') { // 删除
+                doDel(data.id, data.name);
+            } else if (layEvent === 'addChild') { // 添加子节点
+                //只把自己的ID设置成PID传过去
+                var parentData = {};
+                parentData.pid = data.id;
+                showEditModel(parentData);
+            }
+        });
+
+       // cmpTree
+        function getCmpTreeData() {
+            $.get({
+                url: '/rbac/company/getTreeCompanyList',
+                success: function (data) {
+                    cmpTreeData= data.result;
+                    cmpTreeSelect = xmSelect.render({
+                        el: '#cmpTree',
+                        height: '250px',
+                        data: cmpTreeData,
+                        // initValue: [],
+                        model: {label: {type: 'text'}},
+                        prop: {
+                            name: 'cmpName',
+                            value: 'id'
+                        },
+                        radio: true,
+                        clickClose: true,
+                        name:"cmpId",
+                        tree: {
+                            show: true,
+                            indent: 15,
+                            strict: false,
+                            expandedKeys: true,
+
+                        },
+                        on: function (data) {
+                            var change = data.change;
+                            var cmpid = change[0].cmpId;
+                            getOrganiseTreeData(cmpid, function (data) {
+
+                                var  orgTree = xmSelect.render({
+                                    el: '#orgTree',
+                                    height: '250px',
+                                    data: data,
+                                    //initValue: mData ? [mData.organiseId] : [],
+                                    model: {label: {type: 'text'}},
+                                    prop: {
+                                        name: 'organiseName',
+                                        value: 'id'
+                                    },
+                                    name:"organiseId",
+                                    radio: true,
+                                    clickClose: true,
+                                    tree: {
+                                        show: true,
+                                        indent: 15,
+                                        strict: false,
+                                        expandedKeys: true,
+
+                                    }
+                                });
+                            })
+                        },
+                    });
+                }
+
+
+            })
+        }
+
+        function getOrganiseTreeData(cmpid,callback) {
+            $.get({
+                url: '/rbac/organise/getTreeOrganiseList',
+                data:{cmpId:cmpid},
+                success: function (data) {
+                    organise2TreeData= data.result;
+                    callback(organise2TreeData);
+                }
+            })
+        }
+//getRoleRightIdList
+        // 显示表单弹窗
+        function showEditModel(mData) {
+
+
+            console.log(mData);
+            admin.open({
+                type: 1,
+                area: '800px',
+                title: (mData && mData.roleId ? '修改' :  '添加') + '角色',
+                content: $('#modelAuth').html(),
+                success: function (layero, dIndex) {
+                    // 回显表单数据
+                    form.val('dataForm', mData);
+                    // // 回显时渲染菜单和按钮的显示
+                    // showRightView(mData ? (mData.type ? mData.type : 0) : 0);
+                    // // 添加菜单选择点击事件
+                    // form.on("radio(rightType)", function (data) {
+                    //     showRightView(data.value);
+                    // });
+
+
+                    // 渲染下拉树
+                    var organise2Tree = {};
+                    var cmp2TreeSelect = xmSelect.render({
+                        el: '#cmp2Tree',
+                        height: '250px',
+                        data: cmpTreeData,
+                        initValue: mData ? [mData.cmpId] : [],
+                        model: {label: {type: 'text'}},
+                        on: function (data) {
+                            var change = data.change;
+                            var cmpid = change[0].cmpId;
+                            getOrganiseTreeData(cmpid, function (data) {
+
+                                organise2Tree = xmSelect.render({
+                                    el: '#organise2Tree',
+                                    height: '250px',
+                                    data: data,
+                                    initValue: mData ? [mData.organiseId] : [],
+                                    model: {label: {type: 'text'}},
+                                    prop: {
+                                        name: 'organiseName',
+                                        value: 'id'
+                                    },
+                                    radio: true,
+                                    clickClose: true,
+                                    tree: {
+                                        show: true,
+                                        indent: 15,
+                                        strict: false,
+                                        expandedKeys: true,
+
+                                    }
+                                });
+
+
+                            })
+                        },
+                        prop: {
+                            name: 'cmpName',
+                            value: 'id'
+                        },
+                        radio: true,
+                        clickClose: true,
+                        tree: {
+                            show: true,
+                            strict: false,
+                            indent: 15,
+                            strict: false,
+                            expandedKeys: true,
+
+                        }
+                    });
+
+                    if(mData&&mData.roleId)
+                    {
+                        getOrganiseTreeData(mData.cmpId, function (data) {
+
+                            organise2Tree = xmSelect.render({
+                                el: '#organise2Tree',
+                                height: '250px',
+                                data: data,
+                                initValue: mData ? [mData.organiseId] : [],
+                                model: {label: {type: 'text'}},
+                                prop: {
+                                    name: 'organiseName',
+                                    value: 'id'
+                                },
+                                radio: true,
+                                clickClose: true,
+                                tree: {
+                                    show: true,
+                                    indent: 15,
+                                    strict: false,
+                                    expandedKeys: true,
+
+                                }
+                            });
+
+
+                        })
+                        getRightIdList(mData.roleId,function (rightIds) {
+                            getRightTreeData(function (data) {//渲染权限树
+                                rightTree = xmSelect.render({
+                                    el: '#rightTree',
+                                    autoRow: false,
+                                    filterable: true,
+
+                                    initValue:rightIds,
+                                    on: function (data) {
+                                      //  console.log(data)
+                                    },
+                                    tree: {
+                                        strict: false,
+                                        show: true,
+                                        showFolderIcon: true,
+                                        showLine: true,
+                                        indent: 20,
+                                        expandedKeys: true,
+                                    },
+                                    toolbar: {
+                                        show: true,
+                                        list: ['ALL', 'REVERSE', 'CLEAR']
+                                    },
+                                    height: 'auto',
+                                    data: data,
+                                    model: {
+                                        label: {
+                                            type: 'block',
+                                            block: {
+                                                //最大显示数量, 0:不限制
+                                                showCount: 5,
+                                                //是否显示删除图标
+                                                showIcon: true,
+                                            }
+                                        }
+                                    },
+                                    prop: {
+                                        name: 'rightName',
+                                        value: 'id'
+                                    },
+
+                                });
+
+                            });
+                        });
+                    }else
+                    {
+                        getRightTreeData(function (data) {//渲染权限树
+                            rightTree = xmSelect.render({
+                                el: '#rightTree',
+                                autoRow: false,
+                                filterable: true,
+
+                                on: function (data) {
+                                  //  console.log(data)
+                                },
+                                tree: {
+                                    strict: false,
+                                    show: true,
+                                    showFolderIcon: true,
+                                    showLine: true,
+                                    indent: 20,
+                                    expandedKeys: true,
+                                },
+                                toolbar: {
+                                    show: true,
+                                    list: ['ALL', 'REVERSE', 'CLEAR']
+                                },
+                                height: 'auto',
+                                data: data,
+                                model: {
+                                    label: {
+                                        type: 'block',
+                                        block: {
+                                            //最大显示数量, 0:不限制
+                                            showCount: 5,
+                                            //是否显示删除图标
+                                            showIcon: true,
+                                        }
+                                    }
+                                },
+                                prop: {
+                                    name: 'rightName',
+                                    value: 'id'
+                                },
+
+                            });
+
+                        });
+                    }
+
+                    //   getCmpTreeData(mData);
+
+                    // 表单提交事件
+                    form.on('submit(saveBtn)', function (data) {
+
+                        var orgid='';
+                        var cmpid = cmp2TreeSelect.getValue('valueStr');
+                        if (cmpid == "" || cmpid == null) {
+                            layer.alert("请先选择对应公司");
+                            return false;
+                        }
+                        if(organise2Tree) {
+                            orgid = organise2Tree.getValue('valueStr');
+                        }
+                        if (orgid == "" || orgid == null) {
+                            layer.alert("请先选择对应部门");
+                            return false;
+                        }
+                        var rightIds=rightTree.getValue('value');
+                        if (rightIds.length==0) {
+                            layer.alert("请先选择对应权限");
+                            return false;
+                        }
+
+                        data.field.organiseId = orgid ? orgid : 0;
+                        data.field.cmpId = cmpid ? cmpid : 0;
+                        data.field.rightIds=rightIds;
+                     //   var loadIndex = layer.load(2);
+                     //   layer.alert(JSON.stringify(data.field));
+                     //   return  false;addRoleRight
+                        $.post({
+                            url: mData && mData.roleId ? '/rbac/right/updateRoleRight' : '/rbac/right/addRoleRight',
+                            data: JSON.stringify(data.field),
+                            contentType: 'application/json',
+                            success: function (res) {
+                                if (res.success) {
+                                    //layer.close(loadIndex);
+
+                                    layer.close(dIndex);
+                                    layer.msg(res.msg, {icon: 1});
+                                    insTb.reload();
+
+                                } else {
+                                    errorMsg(res.Message);
+
+                                }
+                            }
+                        });
+
+                        return false;
+                    });
+                    // 弹窗不出现滚动条
+                    $(layero).children('.layui-layer-content').css('overflow', 'visible');
+                }
+            });
+        }
+        function getRightTreeData(callback) {
+            $.get({
+                url: '/rbac/right/getRightList',
+               // data:{cmpId:cmpid},
+                success: function (data) {
+                    rightTreeData= data.result;
+                    console.log(rightTreeData)
+                    callback(rightTreeData);
+                }
+            })
+
+        }
+        function getRightIdList(roleId,callback) {
+            $.get({
+                url: '/rbac/right/getRoleRightIdList',
+                 data:{roleId:roleId},
+                success: function (data) {
+                    if(data.success) {
+                        callback(data.result);
+                    }else
+                    {
+                        layer.msg(data.msg);
+                    }
+                }
+            })
+
+        }
+        /* 权限管理 */
+        function showRightModel(roleId) {
+            admin.open({
+                title: '角色权限分配',
+                btn: ['保存', '取消'],
+                area: ['800px', '469px'],
+                content: '<ul id="rightTree" class="ztree"></ul>',
+                success: function (layero, dIndex) {
+                    var loadIndex = layer.load(2);
+                    //查询权限树
+                    $.get('right/tree', {}, function (res) {
+                        layer.close(loadIndex);
+                        if (0 === res.code) {
+                            var nclick = 0;
+                            var rightTree = $.fn.zTree.init($('#rightTree'), {
+                                check: {
+                                    enable: true,
+                                },
+                                data: {
+                                    simpleData: {
+                                        enable: true,
+                                        idKey: "id",
+                                        pIdKey: "pid"
+                                    }
+                                },
+                                callback: {
+                                    onClick: function (e, treeId, treeNode, clickFlag) {
+                                        zTree = $.fn.zTree.getZTreeObj(treeId);
+                                        zTree.checkNode(treeNode, !treeNode.checked, true);
+                                        if(treeNode.id === 0){
+                                            if(nclick % 2 === 0){
+                                                zTree.checkAllNodes(true);
+                                            }else{
+                                                zTree.checkAllNodes(false);
+                                            }
+                                            nclick ++;
+                                        }
+                                    }
+                                }
+                            }, res.data);
+                            $.get('roleRights/list', {roleId:roleId}, function (res) {
+                                var rights = res.data;
+                                for(var i = 0; i < rights.length; i++) {
+                                    // 回显选中的数据　　　
+                                    rightTree.checkNode(rightTree.getNodeByParam("id", rights[i].rightId), true);
+                                }
+                            })
+                        } else {
+                            layer.msg(res.msg, {icon: 2});
+                        }
+                    }, 'json');
+                    // 超出一定高度滚动
+                    $(layero).children('.layui-layer-content').css({'max-height': '300px', 'overflow': 'auto'});
+                },
+                yes: function (dIndex) {
+                    var insTree = $.fn.zTree.getZTreeObj('rightTree');
+                    var checkedRows = insTree.getCheckedNodes(true);
+                    var ids = [];
+                    for (var i = 0; i < checkedRows.length; i++) {
+                        ids.push(checkedRows[i].id);
+                    }
+                    var loadIndex = layer.load(2);
+                    //保存角色权限关联关系
+                    $.post('roleRights/save', {roleId: roleId, rightIds: ids.join(',')}, function (res) {
+                        layer.close(loadIndex);
+                        if (0 === res.code) {
+                            layer.msg(res.msg, {icon: 1});
+                            layer.close(dIndex);
+                        } else {
+                            layer.msg(res.msg, {icon: 2});
+                        }
+                    }, 'json');
+                }
+            });
+        }
+        // 删除
+        window.doDel = function(authorityId, authorityName){
+            if ([[${session.session_runtime}]] == 'demo') return layer.msg('演示环境不允许操作，请联系管理员', {icon: 4});
+            layer.confirm('确定要删除“' + authorityName + '”吗？', {
+                skin: 'layui-layer-admin',
+                shade: .1
+            }, function (index) {
+                layer.close(index);
+                layer.load(2);
+                $.post('right/delete', {
+                    id: authorityId
+                }, function (res) {
+                    layer.closeAll('loading');
+                    if (res.code == 0) {
+                        layer.msg(res.msg, {icon: 1});
+                        insTb.reload();
+                    } else {
+                        layer.msg(res.msg, {icon: 2});
+                    }
+                }, 'json');
+            });
+        }
+
+
+        /* 搜索表格数据 */
+        function doTbSearch(field, idName) {
+            var ids = [], isClear = true;
+            for (var i = 0; i < tbDataList.length; i++) {
+                var item = tbDataList[i], flag = true;
+                for (var f in field) {
+                    if (!field.hasOwnProperty(f)) continue;
+                    if (!field[f]) continue;
+                    isClear = false;
+                    if (!item[f] || item[f].indexOf(field[f]) === -1) {
+                        flag = false;
+                        break;
+                    }
+                }
+                if (flag) ids.push(item[idName]);
+            }
+            if (isClear) {
+                insTb.clearFilter();
+            } else {
+                insTb.filterData(ids);
+            }
+        }
+    });
+
+    function showRightView(type) {
+        //菜单
+        // if(type == 2){
+        //     $(".rightDiv").hide();
+        //     $(".menuDiv").show();
+        // }else if(type==){
+        //     $(".menuDiv").hide();
+        //     $(".rightDiv").show();
+        // }
+    }
+</script>
+</body>
+</html>

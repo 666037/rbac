@@ -1,0 +1,322 @@
+
+<!DOCTYPE html>
+<html lang="zh-cn" class="fullscreen-bg" xmlns:th="http://www.thymeleaf.org" xmlns:shiro="http://www.pollix.at/thymeleaf/shiro">
+<head th:replace="common/links :: common_header(~{::title},~{::style},~{})">
+<title>公司管理</title>
+    <style>
+        .hide {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+<!-- 正文开始 -->
+<div class="layui-fluid">
+    <div class="layui-card">
+        <div class="layui-card-body">
+            <!--表格工具栏-->
+            <form class="layui-form toolbar">
+                <div class="layui-form-item">
+                    <div class="layui-inline">
+                        <label class="layui-form-label">公司名称:</label>
+                        <div class="layui-input-inline">
+                            <input name="cmpName" class="layui-input" placeholder="输入公司名称"/>
+                        </div>
+                    </div>
+                    <div class="layui-inline">
+                        <label class="layui-form-label">公司代码:</label>
+                        <div class="layui-input-inline">
+                            <input name="cmpId" class="layui-input" placeholder="输入公司代码"/>
+                        </div>
+                    </div>
+                    <div class="layui-inline">&emsp;
+                        <button class="layui-btn icon-btn" lay-filter="searchBtn" lay-submit>
+                            <i class="layui-icon">&#xe615;</i>搜索
+                        </button>&nbsp;
+                        <button shiro:hasPermission="right:save" id="addBtn" class="layui-btn icon-btn" type="button">
+                            <i class="layui-icon">&#xe654;</i>添加
+                        </button>
+                        <button id="expandAllBtn" class="layui-btn icon-btn" type="button">
+                            <i class="layui-icon">&#xe622;</i>展开所有
+                        </button>
+                        <button id="foldAllBtn" class="layui-btn icon-btn" type="button">
+                            <i class="layui-icon">&#xe758;</i>关闭所有
+                        </button>
+                    </div>
+                </div>
+            </form>
+            <!-- 数据表格 -->
+            <table id="dataTable"></table>
+        </div>
+    </div>
+</div>
+
+<!-- 表格操作列 -->
+<script type="text/html" id="tableBarAuth">
+    <a shiro:hasPermission="right:update" class="layui-btn layui-btn-primary layui-btn-xs" lay-event="edit">修改</a>
+    <a shiro:hasPermission="right:delete" class="layui-btn layui-btn-danger layui-btn-xs" lay-event="del">删除</a>
+    <a shiro:hasPermission="right:addchild" class="layui-btn layui-btn-xs" lay-event="addChild">添加子节点</a>
+</script>
+<!-- 表单弹窗 -->
+<script type="text/html" id="modelAuth">
+    <form id="dataForm" lay-filter="dataForm" class="layui-form model-form">
+        <input name="cmpId" type="hidden"/>
+        <div class="layui-form-item">
+            <label class="layui-form-label layui-form-required">所属上级</label>
+            <div class="layui-input-block">
+                <div id="selectTree" class="ew-xmselect-tree"></div>
+            </div>
+        </div>
+
+        <div class="layui-form-item">
+            <label class="layui-form-label layui-form-required">公司名称</label>
+            <div class="layui-input-block">
+                <input name="cmpName" placeholder="请输入公司名称" type="text" class="layui-input" maxlength="50"
+                       lay-verType="tips" lay-verify="required" required/>
+            </div>
+        </div>
+
+        <div class="layui-form-item text-right">
+            <button class="layui-btn layui-btn-primary" type="button" ew-event="closePageDialog">取消</button>
+            <button class="layui-btn" lay-filter="saveBtn" lay-submit>保存</button>
+        </div>
+    </form>
+</script>
+<!-- js部分 -->
+<div th:replace="common/scripts :: common"></div>
+<div th:replace="common/scripts :: jquery"></div>
+<script th:inline="javascript">
+    layui.use(['layer', 'form', 'admin', 'treeTable',  'xmSelect','iconPicker'], function () {
+       // var $ = layui.jquery;
+        var layer = layui.layer;
+        var form = layui.form;
+        var admin = layui.admin;
+        var treeTable = layui.treeTable;
+        var xmSelect = layui.xmSelect;
+        var iconPicker = layui.iconPicker;
+        var tbDataList = [];
+
+        // 渲染表格
+        var insTb = treeTable.render({
+            elem: '#dataTable',
+
+            tree: {
+                iconIndex: 1,  // 折叠图标显示在第几列
+                idName: 'id',  // 自定义id字段的名称
+                pidName: 'pid',  // 自定义标识是否还有子节点的字段名称
+                isPidData: true,  // 是否是pid形式数据
+                childName:'children',
+            },
+            cellMinWidth: 100,
+            height: "full-98",
+            cols: [
+                {type: 'numbers'},
+                {field: 'cmpName', title: '公司名称', width: 500},
+                {field: 'cmpId', title: '公司代码', width: 200},
+
+
+                {templet: '#tableBarAuth', title: '操作', align: 'center', width: 260}
+            ],
+            loading:false,
+            reqData: function (data, callback) {
+                $.get('/rbac/company/getCompanyList', function (res) {
+                    tbDataList = res.result ? res.result : [];
+                    callback(res.result);
+                    insTb.foldAll();
+                });
+            }
+        });
+
+        /* 表格搜索 */
+        form.on('submit(searchBtn)', function (data) {
+            doTbSearch(data.field, 'id');
+            return false;
+        });
+
+        // 添加按钮点击事件
+        $('#addBtn').click(function () {
+            showEditModel();
+        });
+        // 展开所有
+        $('#expandAllBtn').click(function () {
+            insTb.expandAll();
+        });
+        // 关闭所有
+        $('#foldAllBtn').click(function () {
+            insTb.foldAll();
+        });
+
+        // 工具条点击事件
+        treeTable.on('tool(dataTable)', function (obj) {
+            var data = obj.data;
+            var layEvent = obj.event;
+            if (layEvent === 'edit') { // 修改
+                showEditModel(data);
+            } else if (layEvent === 'del') { // 删除
+                doDel(data.id, data.name);
+            } else if (layEvent === 'addChild') { // 添加子节点
+                //只把自己的ID设置成PID传过去
+                var parentData = {};
+                parentData.pid = data.id;
+                showEditModel(parentData);
+            }
+        });
+
+        // 显示表单弹窗
+        function showEditModel(mData) {
+            console.log(mData);
+            admin.open({
+                type: 1,
+                area: '800px',
+                title: (mData && mData.id ? '修改' : (mData && mData.pid?'添加子节点':'添加')) + '菜单',
+                content: $('#modelAuth').html(),
+                success: function (layero, dIndex) {
+                    // 回显表单数据
+                    form.val('dataForm', mData);
+                    // 回显时渲染菜单和按钮的显示
+                    showRightView(mData?(mData.type?mData.type:0):0);
+                    // 添加菜单选择点击事件
+                    form.on("radio(rightType)", function (data) {
+                        showRightView(data.value);
+                    });
+
+                    //渲染图标选择
+                    iconPicker.render({
+                        // 选择器，推荐使用input
+                        elem: '#iconPicker',
+                        // 数据类型：fontClass/unicode，推荐使用fontClass
+                        type: 'fontClass',
+                        // 是否开启搜索：true/false，默认true
+                        search: true,
+                        // 是否开启分页：true/false，默认true
+                        page: true,
+                        // 每页显示数量，默认12
+                        limit: 12,
+                        // 点击回调
+                        click: function (data) {
+                            $('#iconPicker').val("layui-icon "+data.icon)
+                        },
+                        // 渲染成功后的回调
+                        success: function(d) {
+                           // console.log("d="+d);
+                        }
+                    });
+                    console.log(insTb.options.data)
+                    // 渲染下拉树
+                    var insXmSel = xmSelect.render({
+                        el: '#selectTree',
+                        height: '250px',
+                        data: insTb.options.data,
+                        initValue: mData ? [mData.pid] : [],
+                        model: {label: {type: 'text'}},
+                        prop: {
+                            name: 'cmpName',
+                            value: 'id'
+                        },
+                        radio: true,
+                        clickClose: true,
+                        tree: {
+                            show: true,
+                            indent: 15,
+                            strict: false,
+                            expandedKeys: true,
+                            children:'child',
+                        }
+                    });
+
+
+                    // 表单提交事件
+                    form.on('submit(saveBtn)', function (data) {
+
+                         var rpid = insXmSel.getValue('valueStr');
+                        data.field.cmpPid=rpid?rpid:0;
+                        var loadIndex = layer.load(2);
+                        $.post({
+                            url: mData && mData.id ?'/rbac/company/updateCompany':'/rbac/company/addCompany',
+                            data: JSON.stringify(data.field) ,
+                            contentType: 'application/json',
+                            success: function (res) {
+                                if (res.success) {
+                                    layer.close(loadIndex);
+
+                                        layer.close(dIndex);
+                                        layer.msg(res.msg, {icon: 1});
+                                        insTb.refresh();
+
+                                }
+                                else {
+                                    errorMsg(res.Message);
+
+                                }
+                            }
+                        });
+
+                        return false;
+                    });
+                    // 弹窗不出现滚动条
+                    $(layero).children('.layui-layer-content').css('overflow', 'visible');
+                }
+            });
+        }
+
+        // 删除
+        window.doDel = function(authorityId, authorityName){
+            if ([[${session.session_runtime}]] == 'demo') return layer.msg('演示环境不允许操作，请联系管理员', {icon: 4});
+            layer.confirm('确定要删除“' + authorityName + '”吗？', {
+                skin: 'layui-layer-admin',
+                shade: .1
+            }, function (index) {
+                layer.close(index);
+                layer.load(2);
+                $.post('right/delete', {
+                    id: authorityId
+                }, function (res) {
+                    layer.closeAll('loading');
+                    if (res.code == 0) {
+                        layer.msg(res.msg, {icon: 1});
+                        insTb.refresh();
+                    } else {
+                        layer.msg(res.msg, {icon: 2});
+                    }
+                }, 'json');
+            });
+        }
+
+
+        /* 搜索表格数据 */
+        function doTbSearch(field, idName) {
+            var ids = [], isClear = true;
+            for (var i = 0; i < tbDataList.length; i++) {
+                var item = tbDataList[i], flag = true;
+                for (var f in field) {
+                    if (!field.hasOwnProperty(f)) continue;
+                    if (!field[f]) continue;
+                    isClear = false;
+                    if (!item[f] || item[f].toString().indexOf(field[f]) === -1) {
+                        flag = false;
+                        break;
+                    }
+                }
+                if (flag) ids.push(item[idName]);
+            }
+            if (isClear) {
+                insTb.clearFilter();
+            } else {
+                insTb.filterData(ids);
+            }
+        }
+    });
+
+    function showRightView(type) {
+        //菜单
+        // if(type == 2){
+        //     $(".rightDiv").hide();
+        //     $(".menuDiv").show();
+        // }else if(type==){
+        //     $(".menuDiv").hide();
+        //     $(".rightDiv").show();
+        // }
+    }
+</script>
+</body>
+</html>
